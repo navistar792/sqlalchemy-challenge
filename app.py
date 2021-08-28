@@ -4,9 +4,12 @@ import sqlalchemy
 from sqlalchemy.ext.automap import automap_base
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine, func
+import datetime as dt
+from datetime import datetime
+from datetime import timedelta
+
 
 from flask import Flask, jsonify
-
 
 #################################################
 # Database Setup
@@ -41,6 +44,7 @@ def welcome():
     """List all available api routes."""
     return (
         f"Available Routes:<br/>"
+        f"/api/v1.0/precipitation<br/>"
         f"/api/v1.0/stations<br/>"
         f"/api/v1.0/tobs<br/>"
         f"/api/v1.0/<start><br/>"
@@ -48,47 +52,75 @@ def welcome():
     )
 
 
-@app.route("/api/v1.0/stations")
-def names():
+@app.route("/api/v1.0/precipitation")
+def precip():
+    # Convert the query results to a dictionary using `date` as the key and `prcp` as the value.
+    # Return the JSON representation of your dictionary.
+    
     # Create our session (link) from Python to the DB
     session = Session(engine)
 
-    """Return a list of all passenger names"""
+    """Return a list of dates and precip values"""
     # Query all passengers
-    results = session.query(Passenger.name).all()
+    results = session.query(Measurement.date, Measurement.prcp).all()
 
     session.close()
 
     # Convert list of tuples into normal list
-    all_names = list(np.ravel(results))
+    precip_dates = list(np.ravel(results))
 
-    return jsonify(all_names)
+    return jsonify(precip_dates)
 
-
-@app.route("/api/v1.0/tobs")
-def passengers():
+@app.route("/api/v1.0/stations")
+def stations():
     # Create our session (link) from Python to the DB
     session = Session(engine)
 
-    """Return a list of passenger data including the name, age, and sex of each passenger"""
+    """Return a list of all stations"""
     # Query all passengers
-    results = session.query(Passenger.name, Passenger.age, Passenger.sex).all()
+    results = session.query(Station.name, Station.id, Station.station, Station.latitude, Station.longitude, Station.elevation).all()
 
     session.close()
 
-    # Create a dictionary from the row data and append to a list of all_passengers
-    all_passengers = []
-    for name, age, sex in results:
-        passenger_dict = {}
-        passenger_dict["name"] = name
-        passenger_dict["age"] = age
-        passenger_dict["sex"] = sex
-        all_passengers.append(passenger_dict)
+    # Convert list of tuples into normal list
+    all_stations = list(np.ravel(results))
 
-    return jsonify(all_passengers)
+    return jsonify(all_stations)
+
+
+@app.route("/api/v1.0/tobs")
+def tobs():
+    # Create our session (link) from Python to the DB
+    session = Session(engine)
+    
+    # Design a query to find the most active station
+    sel2 = [Station.name, Station.id, func.count(Station.name)]
+    data_joined = session.query(*sel2).filter(Measurement.station == Station.station)\
+    .group_by(Station.name).order_by(func.count(Measurement.id).desc()).limit(1).all()
+    act_station = data_joined[0][1]
+    
+    # Find the max date and convert to date format, and get the date for one year ago from max date
+    sel1 = [func.max(Measurement.date)]
+    max_date_qry = session.query(*sel1).filter(Measurement.station == Station.station).filter(Station.id == act_station).all()
+    max_dte = max_date_qry[0][0]
+    conv_date = dt.datetime.strptime(max_dte, "%Y-%m-%d")
+    one_year_ago = conv_date - dt.timedelta(weeks=52)
+
+
+    """Return a list of passenger data including the name, age, and sex of each passenger"""
+    # Query all passengers
+    sel3 = [Measurement.date, Measurement.tobs]
+    results = session.query(*sel3).filter(Measurement.station == Station.station).filter(Station.id == act_station).filter(Measurement.date >= one_year_ago).all()
+
+    session.close()
+
+    # Convert list of tuples into normal list
+    all_tobs = list(np.ravel(results))
+
+    return jsonify(all_tobs)
 
 @app.route("/api/v1.0/<start>")
-def passengers():
+def start():
     # Create our session (link) from Python to the DB
     session = Session(engine)
 
@@ -110,7 +142,7 @@ def passengers():
     return jsonify(all_passengers)
 
 @app.route("/api/v1.0/<start>/<end>")
-def passengers():
+def startend():
     # Create our session (link) from Python to the DB
     session = Session(engine)
 
