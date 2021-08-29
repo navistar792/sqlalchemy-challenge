@@ -7,7 +7,8 @@ from sqlalchemy import create_engine, func
 import datetime as dt
 from datetime import datetime
 from datetime import timedelta
-
+from scipy import stats
+import pandas as pd
 
 from flask import Flask, jsonify
 
@@ -44,11 +45,14 @@ def welcome():
     """List all available api routes."""
     return (
         f"Available Routes:<br/>"
-        f"/api/v1.0/precipitation<br/>"
-        f"/api/v1.0/stations<br/>"
-        f"/api/v1.0/tobs<br/>"
-        f"/api/v1.0/<start><br/>"
-        f"/api/v1.0/<start>/<end>"
+        f"For date and precip data: /api/v1.0/precipitation<br/>"
+        f"For list of all stations: /api/v1.0/stations<br/>"
+        f"For date and precip data: /api/v1.0/tobs<br/>"
+        f"<br/>"
+        f"Enter query start date in this format:<br/>"
+        f"/api/v1.0/yyyy-mm-dd<br/>"
+        f"Enter query start AND end date in this format:<br/>"
+        f"/api/v1.0/yyyy-mm-dd/yyyy-mm-dd"
     )
 
 
@@ -119,49 +123,65 @@ def tobs():
 
     return jsonify(all_tobs)
 
-@app.route("/api/v1.0/<start>")
-def start():
-    # Create our session (link) from Python to the DB
-    session = Session(engine)
-
-    """Return a list of passenger data including the name, age, and sex of each passenger"""
-    # Query all passengers
-    results = session.query(Passenger.name, Passenger.age, Passenger.sex).all()
-
-    session.close()
-
-    # Create a dictionary from the row data and append to a list of all_passengers
-    all_passengers = []
-    for name, age, sex in results:
-        passenger_dict = {}
-        passenger_dict["name"] = name
-        passenger_dict["age"] = age
-        passenger_dict["sex"] = sex
-        all_passengers.append(passenger_dict)
-
-    return jsonify(all_passengers)
-
 @app.route("/api/v1.0/<start>/<end>")
-def startend():
+def startandend(start=None, end=None):
+   
     # Create our session (link) from Python to the DB
     session = Session(engine)
 
     """Return a list of passenger data including the name, age, and sex of each passenger"""
     # Query all passengers
-    results = session.query(Passenger.name, Passenger.age, Passenger.sex).all()
+    results = session.query(Measurement.date, Measurement.prcp).all()
+
+    df4 = pd.read_sql(sql = session.query(Measurement).with_entities(Measurement.date, Measurement.tobs).filter(Measurement.date>= start).filter(Measurement.date <= end).statement, 
+                 con = session.bind)
 
     session.close()
 
     # Create a dictionary from the row data and append to a list of all_passengers
-    all_passengers = []
-    for name, age, sex in results:
-        passenger_dict = {}
-        passenger_dict["name"] = name
-        passenger_dict["age"] = age
-        passenger_dict["sex"] = sex
-        all_passengers.append(passenger_dict)
+    
+    tmax_temp = stats.tmax(df4['tobs'])
+    tmin_temp = stats.tmin(df4['tobs'])
+    tmean_temp = stats.tmean(df4['tobs'])
+     
+    temp_summ = [
+        {'max_temp':tmax_temp},
+        {'min_temp':tmin_temp},
+        {'mean_temp':tmean_temp}
+    ]
 
-    return jsonify(all_passengers)    
+    return jsonify(temp_summ)
+
+@app.route("/api/v1.0/<start>")
+def startdate(start=None):
+   
+    # Create our session (link) from Python to the DB
+    session = Session(engine)
+
+    """Return a list of passenger data including the name, age, and sex of each passenger"""
+    # Query all passengers
+    results = session.query(Measurement.date, Measurement.prcp).all()
+
+    df4 = pd.read_sql(sql = session.query(Measurement).with_entities(Measurement.date, Measurement.tobs).filter(Measurement.date>= start).statement, 
+                 con = session.bind)
+
+    session.close()
+
+    # Create a dictionary from the row data and append to a list of all_passengers
+    
+    tmax_temp = stats.tmax(df4['tobs'])
+    tmin_temp = stats.tmin(df4['tobs'])
+    tmean_temp = stats.tmean(df4['tobs'])
+     
+    temp_summ = [
+        {'max_temp':tmax_temp},
+        {'min_temp':tmin_temp},
+        {'mean_temp':tmean_temp}
+    ]
+
+    return jsonify(temp_summ)
+
+
 
 if __name__ == '__main__':
     app.run(debug=True)
